@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Arbiter Viewer</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-raised: #eaedf1;
+  --border: #d1d5db;
+  --border-strong: #9ca3af;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --text-dim: #9ca3af;
+  --accent: #3b82f6;
+  --contention: #7B2D8E;
+  --row-alt: rgba(0,0,0,0.02);
+
+  --c0: #4A88D8; --c1: #E08070; --c2: #D4AA18; --c3: #C27832; --c4: #55B078;
+  --font-mono: 'IBM Plex Mono', 'Menlo', monospace;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-sans); font-size: 15px;
+  overflow: hidden; height: 100vh;
+  display: flex; flex-direction: column;
+}
+
+header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+header h1 { font-family: var(--font-mono); font-size: 16px; font-weight: 600; letter-spacing: .02em; }
+header .source { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.controls { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.controls button {
+  font-family: var(--font-mono); font-size: 13px; padding: 5px 12px;
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+}
+.controls button:hover { background: var(--border); }
+.time-display { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.legend {
+  display: flex; align-items: center; gap: 14px;
+  padding: 6px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0; flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); cursor: pointer; }
+.legend-item:hover { color: var(--text); }
+.legend-swatch { width: 14px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.legend .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+.legend-tip { font-size: 11px; color: var(--text-dim); margin-left: auto; cursor: default; }
+
+.stats-bar { display: flex; gap: 1px; padding: 0; border-bottom: 1px solid var(--border); background: var(--border); flex-shrink: 0; }
+.stat {
+  flex: 1; background: var(--surface); padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.stat:first-child { padding-left: 16px; }
+.stat-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.stat-row { display: flex; align-items: baseline; gap: 8px; }
+.stat-val { font-family: var(--font-mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.stat-bar-wrap { height: 4px; background: var(--surface-raised); border-radius: 2px; margin-top: 4px; }
+.stat-bar-fill { height: 100%; border-radius: 2px; }
+
+.ctrler-table-wrap { border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; overflow-x: auto; padding: 0 16px; }
+.ctrler-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ctrler-table th { text-align: left; font-weight: 600; color: var(--text-dim); padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.ctrler-table td { padding: 5px 10px; border-bottom: 1px solid var(--surface-raised); white-space: nowrap; }
+.ctrler-table tr:last-child td { border-bottom: none; }
+.ctrler-table .cid { font-weight: 600; }
+.ctrler-table .bar-cell { width: 140px; }
+.ctrler-table .mini-bar { height: 6px; border-radius: 2px; display: inline-block; vertical-align: middle; }
+
+.main { flex: 1; display: flex; overflow: hidden; position: relative; }
+.labels {
+  width: 200px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface); overflow-y: hidden;
+}
+.label-row {
+  display: flex; align-items: center; padding: 0 12px;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  border-bottom: 1px solid var(--border); gap: 8px;
+}
+.label-row .bank-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; background: #3EAAB8; }
+.label-row .bank-stats { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+.label-row .contention-badge { font-size: 10px; font-weight: 600; color: var(--contention); background: rgba(123,45,142,0.1); padding: 1px 5px; border-radius: 3px; }
+
+.scroll-area { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; }
+.timeline { position: relative; min-width: 100%; }
+.ruler {
+  position: sticky; top: 0; z-index: 10; height: 28px;
+  background: var(--surface); border-bottom: 1px solid var(--border); overflow: hidden;
+}
+.ruler-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); }
+.ruler-label {
+  position: absolute; top: 6px; font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+  white-space: nowrap; transform: translateX(4px);
+}
+.rows { position: relative; }
+.rows canvas { display: block; }
+
+.tooltip {
+  position: fixed; z-index: 100; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 14px; font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.6; pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  max-width: 340px; display: none; font-variant-numeric: tabular-nums;
+}
+.tooltip.visible { display: block; }
+.tooltip b { font-weight: 600; }
+.tooltip .dim { color: var(--text-muted); }
+.tooltip .contention-line { color: var(--contention); font-weight: 500; }
+</style>
+
+<div class="tooltip" id="tooltip"></div>
+
+<header>
+  <h1>Memory Arbiter Viewer</h1>
+  <span class="source" id="sourceLabel"></span>
+  <div class="controls">
+    <button id="zoomOut">&minus;</button>
+    <button id="zoomIn">+</button>
+    <button id="zoomFit">Reset</button>
+    <span class="time-display" id="timeDisplay"></span>
+  </div>
+</header>
+<div class="legend" id="legend"></div>
+<div class="stats-bar" id="statsBar"></div>
+<div class="ctrler-table-wrap" id="ctrlerWrap"></div>
+<div class="main">
+  <div class="labels" id="labels"></div>
+  <div class="scroll-area" id="scrollArea"><div class="timeline" id="timeline">
+      <div class="ruler" id="ruler"></div>
+      <div class="rows" id="rows"></div>
+    </div></div>
+</div>
+
+<script>
+const DATA = {};
+
+const CTRLER_NAMES = ['Load','Store','Exec (A)','Exec (B)','Exec (C)'];
+const CTRLER_COLORS = ['#4A88D8','#E08070','#D4AA18','#C27832','#55B078'];
+const CTRLER_ROLES = ['mvin → spad write','mvout → spad read','gemm A read','gemm B read','drain C write'];
+const N_BANKS = 4;
+const LANE_H = 36;
+const BAR_H = 24;
+const BAR_PAD = (LANE_H - BAR_H) / 2;
+const RULER_H = 28;
+const PADDING = 10;
+const CONTENTION_COLOR = '#7B2D8E';
+
+var bankLanes = [];
+var bankOffset = [];
+var totalHeight = 0;
+let viewStart, viewEnd, highlightCtrler = null, rafId = 0;
+let selectedInstr = null, highlightSet = null;
+
+const tooltip = document.getElementById('tooltip');
+const scrollArea = document.getElementById('scrollArea');
+const timelineEl = document.getElementById('timeline');
+const rulerEl = document.getElementById('ruler');
+const rowsEl = document.getElementById('rows');
+const labelsEl = document.getElementById('labels');
+const timeDisplay = document.getElementById('timeDisplay');
+
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+rowsEl.appendChild(canvas);
+
+function init() {
+  if (!DATA.accesses || DATA.accesses.length === 0) return;
+  document.getElementById('sourceLabel').textContent = DATA.source || '';
+  viewStart = -PADDING;
+  viewEnd = DATA.maxTime + PADDING;
+  labelsEl.style.paddingTop = RULER_H + 'px';
+
+  packLanes();
+  computeStats();
+  buildLegend();
+  buildStats();
+  buildCtrlerTable();
+  buildLabels();
+  setupInteraction();
+  scheduleRender();
+}
+
+function packLanes() {
+  var perBank = [];
+  for (var b = 0; b < N_BANKS; b++) perBank.push([]);
+  DATA.accesses.forEach(function(a) { if (a.b < N_BANKS) perBank[a.b].push(a); });
+
+  bankLanes = [];
+  bankOffset = [];
+  var y = 0;
+  for (var b = 0; b < N_BANKS; b++) {
+    var items = perBank[b];
+    items.sort(function(x, y) { var sx = x.q !== undefined ? x.q : x.f; var sy = y.q !== undefined ? y.q : y.f; return sx - sy; });
+    var laneEnd = [];
+    items.forEach(function(a) {
+      var start = a.q !== undefined ? a.q : a.f;
+      var lane = -1;
+      for (var j = 0; j < laneEnd.length; j++) { if (laneEnd[j] <= start) { lane = j; break; } }
+      if (lane === -1) { lane = laneEnd.length; laneEnd.push(-Infinity); }
+      a._lane = lane;
+      laneEnd[lane] = a.e;
+    });
+    var count = Math.max(laneEnd.length, 1);
+    bankLanes.push(count);
+    bankOffset.push(y);
+    y += count * LANE_H;
+  }
+  totalHeight = y;
+}
+
+function accessTop(a) {
+  return bankOffset[a.b] + (a._lane || 0) * LANE_H + BAR_PAD;
+}
+
+let bankStats, ctrlerStats, totalReqs, totalContended;
+
+function computeStats() {
+  bankStats = Array.from({length: N_BANKS}, () => ({total: 0, contended: 0}));
+  ctrlerStats = Array.from({length: 5}, () => ({total: 0, contended: 0}));
+  DATA.accesses.forEach(a => {
+    bankStats[a.b].total++;
+    if (a.q !== undefined) bankStats[a.b].contended++;
+    if (a.c < 5) {
+      ctrlerStats[a.c].total++;
+      if (a.q !== undefined) ctrlerStats[a.c].contended++;
+    }
+  });
+  totalReqs = DATA.accesses.length;
+  totalContended = DATA.accesses.filter(a => a.q !== undefined).length;
+}
+
+function buildLegend() {
+  const el = document.getElementById('legend');
+  CTRLER_NAMES.forEach((name, i) => {
+    if (ctrlerStats[i].total === 0) return;
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    const sw = document.createElement('div');
+    sw.className = 'legend-swatch';
+    sw.style.background = CTRLER_COLORS[i];
+    item.appendChild(sw);
+    item.appendChild(document.createTextNode(name));
+    item.addEventListener('click', () => { highlightCtrler = highlightCtrler === i ? null : i; scheduleRender(); });
+    el.appendChild(item);
+  });
+  const sep = document.createElement('div'); sep.className = 'sep'; el.appendChild(sep);
+  const ci = document.createElement('div'); ci.className = 'legend-item'; ci.style.cursor = 'default';
+  const cs = document.createElement('div'); cs.className = 'legend-swatch';
+  cs.style.background = 'var(--surface-raised)'; cs.style.borderBottom = '4px solid var(--contention)';
+  ci.appendChild(cs); ci.appendChild(document.createTextNode('contention')); el.appendChild(ci);
+  const tip = document.createElement('div'); tip.className = 'legend-tip';
+  tip.textContent = 'scroll to zoom · drag to pan · click legend to filter · click bar to show deps · Esc to clear'; el.appendChild(tip);
+}
+
+function buildStats() {
+  const bar = document.getElementById('statsBar');
+  const items = [
+    { label: 'Total', val: totalReqs, cnt: totalContended },
+  ];
+  for (let i = 0; i < bankStats.length; i++) items.push({ label: 'Bank ' + i, val: bankStats[i].total, cnt: bankStats[i].contended });
+  items.forEach(it => {
+    const pct = it.val ? it.cnt / it.val : 0;
+    const div = document.createElement('div'); div.className = 'stat';
+    div.innerHTML =
+      '<div class="stat-label">' + it.label + '</div>' +
+      '<div class="stat-row"><span class="stat-val">' + it.val + '</span><span class="stat-sub">' + it.cnt + ' contended</span></div>' +
+      '<div class="stat-bar-wrap"><div class="stat-bar-fill" style="width:' + (pct*100).toFixed(1) + '%;background:var(--contention)"></div></div>' +
+      '<div class="stat-sub" style="font-size:10px;margin-top:2px">' + (pct*100).toFixed(1) + '%</div>';
+    bar.appendChild(div);
+  });
+}
+
+function buildCtrlerTable() {
+  const wrap = document.getElementById('ctrlerWrap');
+  const maxR = Math.max.apply(null, ctrlerStats.map(function(s){return s.total}).concat([1]));
+  var html = '<table class="ctrler-table"><thead><tr><th>Controller</th><th>Role</th><th>Reqs</th><th>Contended</th><th>Rate</th><th class="bar-cell"></th></tr></thead><tbody>';
+  ctrlerStats.forEach(function(s, i) {
+    if (s.total === 0) return;
+    var pct = s.total ? (s.contended / s.total * 100).toFixed(1) : '0.0';
+    var bw = (s.total / maxR * 100).toFixed(0);
+    html += '<tr><td style="color:' + CTRLER_COLORS[i] + ';font-weight:600">' + CTRLER_NAMES[i] + '</td><td style="color:var(--text-muted)">' + CTRLER_ROLES[i] + '</td><td>' + s.total + '</td><td>' + s.contended + '</td><td>' + pct + '%</td><td class="bar-cell"><span class="mini-bar" style="width:' + bw + '%;background:' + CTRLER_COLORS[i] + ';opacity:.4"></span></td></tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function buildLabels() {
+  for (var b = 0; b < N_BANKS; b++) {
+    var h = bankLanes[b] * LANE_H;
+    var row = document.createElement('div'); row.className = 'label-row'; row.style.height = h + 'px';
+    row.innerHTML = '<div class="bank-dot"></div>Bank ' + b + '<span class="bank-stats">' + bankStats[b].total + ' req</span>';
+    if (bankStats[b].contended > 0) row.innerHTML += '<span class="contention-badge">' + bankStats[b].contended + '</span>';
+    labelsEl.appendChild(row);
+  }
+}
+
+function setupInteraction() {
+  scrollArea.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var rect = scrollArea.getBoundingClientRect();
+    zoom(e.deltaY > 0 ? 1.15 : 1/1.15, e.clientX - rect.left);
+  }, {passive: false});
+
+  var dragging = false, didDrag = false, dx = 0, dvs = 0, dve = 0;
+  scrollArea.addEventListener('mousedown', function(e) { dragging = true; didDrag = false; dx = e.clientX; dvs = viewStart; dve = viewEnd; scrollArea.style.cursor = 'grabbing'; });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    if (Math.abs(e.clientX - dx) > 3) didDrag = true;
+    var dt = -((e.clientX - dx) / scrollArea.clientWidth) * (dve - dvs);
+    viewStart = dvs + dt; viewEnd = dve + dt; scheduleRender();
+  });
+  window.addEventListener('mouseup', function() { dragging = false; scrollArea.style.cursor = ''; });
+
+  canvas.addEventListener('mousemove', function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var hit = hitTest(mx, my);
+    if (hit) { showTooltip(e, hit); canvas.style.cursor = 'pointer'; }
+    else { tooltip.classList.remove('visible'); canvas.style.cursor = ''; }
+  });
+  canvas.addEventListener('mouseleave', function() { tooltip.classList.remove('visible'); canvas.style.cursor = ''; });
+
+  canvas.addEventListener('click', function(e) {
+    if (didDrag) return;
+    var rect = canvas.getBoundingClientRect();
+    var hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit && hit.n !== undefined && DATA.instructions) {
+      var clickedId = hit.n;
+      if (selectedInstr === clickedId) { selectedInstr = null; highlightSet = null; }
+      else {
+        selectedInstr = clickedId;
+        var info = DATA.instructions[String(clickedId)];
+        highlightSet = new Set([clickedId]);
+        if (info && info.d) info.d.forEach(function(id) { highlightSet.add(id); });
+      }
+    } else {
+      selectedInstr = null; highlightSet = null;
+    }
+    scheduleRender();
+  });
+  window.addEventListener('keydown', function(e) { if (e.key === 'Escape') { selectedInstr = null; highlightSet = null; scheduleRender(); } });
+
+  document.getElementById('zoomIn').addEventListener('click', function() { zoom(1/1.5, scrollArea.clientWidth/2); });
+  document.getElementById('zoomOut').addEventListener('click', function() { zoom(1.5, scrollArea.clientWidth/2); });
+  document.getElementById('zoomFit').addEventListener('click', function() { viewStart = -PADDING; viewEnd = DATA.maxTime + PADDING; highlightCtrler = null; selectedInstr = null; highlightSet = null; scheduleRender(); });
+  window.addEventListener('resize', scheduleRender);
+}
+
+function timeToX(t) { return ((t - viewStart) / (viewEnd - viewStart)) * scrollArea.clientWidth; }
+function xToTime(x) { return viewStart + (x / scrollArea.clientWidth) * (viewEnd - viewStart); }
+
+function zoom(factor, cx) {
+  var ct = xToTime(cx);
+  var nr = (viewEnd - viewStart) * factor;
+  var cr = Math.max(4, Math.min(DATA.maxTime + 2*PADDING, nr));
+  var ratio = (ct - viewStart) / (viewEnd - viewStart);
+  viewStart = ct - cr * ratio; viewEnd = ct + cr * (1 - ratio); scheduleRender();
+}
+
+function scheduleRender() { if (!rafId) rafId = requestAnimationFrame(function() { rafId = 0; render(); }); }
+
+function niceStep(range) {
+  var raw = range / 8, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+  if (n <= 1) return mag; if (n <= 2) return 2*mag; if (n <= 5) return 5*mag; return 10*mag;
+}
+
+function hitTest(mx, my) {
+  var w = scrollArea.clientWidth;
+  var accesses = DATA.accesses;
+  for (var i = accesses.length - 1; i >= 0; i--) {
+    var a = accesses[i];
+    if (highlightCtrler !== null && a.c !== highlightCtrler) continue;
+    var x1 = Math.max(timeToX(a.f), 0), x2 = Math.max(timeToX(a.e), x1 + 2);
+    if (x2 < 0 || x1 > w) continue;
+    var top = accessTop(a);
+    if (mx >= x1 && mx <= x2 && my >= top && my <= top + BAR_H) return a;
+    if (a.q !== undefined) {
+      var qx = timeToX(a.q);
+      if (mx >= qx && mx <= x1 && my >= top && my <= top + BAR_H) return a;
+    }
+  }
+  return null;
+}
+
+function render() {
+  var w = scrollArea.clientWidth;
+  var h = totalHeight;
+  var dpr = devicePixelRatio || 1;
+  timelineEl.style.width = w + 'px';
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  rulerEl.innerHTML = '';
+  var range = viewEnd - viewStart, step = niceStep(range), first = Math.ceil(viewStart / step) * step;
+  for (var t = first; t <= viewEnd; t += step) {
+    var x = timeToX(t);
+    var tick = document.createElement('div'); tick.className = 'ruler-tick'; tick.style.left = x + 'px'; rulerEl.appendChild(tick);
+    var lbl = document.createElement('div'); lbl.className = 'ruler-label'; lbl.style.left = x + 'px'; lbl.textContent = Math.round(t) + ' ns'; rulerEl.appendChild(lbl);
+  }
+
+  ctx.clearRect(0, 0, w, h);
+
+  for (var b = 0; b < N_BANKS; b++) {
+    var by = bankOffset[b], bh = bankLanes[b] * LANE_H;
+    if (b % 2 === 1) { ctx.fillStyle = 'rgba(0,0,0,0.02)'; ctx.fillRect(0, by, w, bh); }
+    ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, by + bh - 0.5); ctx.lineTo(w, by + bh - 0.5); ctx.stroke();
+    if (bankLanes[b] > 1) {
+      ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      for (var l = 1; l < bankLanes[b]; l++) {
+        var ly = by + l * LANE_H - 0.5;
+        ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(w, ly); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+  }
+  ctx.globalAlpha = 0.25; ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1;
+  for (var t2 = first; t2 <= viewEnd; t2 += step) {
+    var gx = Math.round(timeToX(t2)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  var accesses = DATA.accesses;
+  for (var i = 0; i < accesses.length; i++) {
+    var a = accesses[i];
+    var x1 = timeToX(a.f), x2 = timeToX(a.e);
+    if (x2 < -5 || x1 > w + 5) continue;
+    var dimmed = (highlightCtrler !== null && a.c !== highlightCtrler)
+                 || (highlightSet !== null && !highlightSet.has(a.n));
+    var top = accessTop(a);
+    var contended = a.q !== undefined;
+    var color = CTRLER_COLORS[a.c] || '#888';
+
+    var barStart = contended ? timeToX(a.q) : x1;
+    var bx = Math.max(barStart, -2), bw = Math.max(x2 - bx, 2);
+    // Selection reads as "everything else fades", the same as the pipeline
+    // timeline -- no outline on the picked bar. An outline competes with the
+    // contention underline drawn just below and, on a bar only a few pixels
+    // wide, ends up covering the colour that identifies the controller.
+    ctx.globalAlpha = dimmed ? 0.12 : 1;
+    ctx.fillStyle = color;
+    ctx.fillRect(bx, top, bw, BAR_H);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx + 0.5, top + 0.5, bw - 1, BAR_H - 1);
+
+    if (contended) {
+      var cx1 = Math.max(timeToX(a.q), -2);
+      ctx.strokeStyle = CONTENTION_COLOR; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(cx1, top + BAR_H - 1); ctx.lineTo(Math.max(x1, cx1), top + BAR_H - 1); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  timeDisplay.textContent = Math.round(viewStart) + ' – ' + Math.round(viewEnd) + ' ns';
+}
+
+function showTooltip(e, a) {
+  var color = CTRLER_COLORS[a.c] || '#888';
+  var name = CTRLER_NAMES[a.c] || ('initiator ' + a.c);
+  var html = '<b style="color:' + color + '">' + name + '</b> <span class="dim">' + (CTRLER_ROLES[a.c] || '') + '</span>';
+  html += '<br>Bank <b>' + a.b + '</b> · row <b>' + a.r + '</b>';
+  if (a.n !== undefined && DATA.instructions) {
+    var info = DATA.instructions[String(a.n)];
+    if (info) html += '<br><span class="dim">instr</span> <b>' + (info.n || a.n) + '</b> <span class="dim">(' + info.t + ')</span>';
+  }
+  if (a.q !== undefined) {
+    html += '<br><span class="dim">queued</span> ' + a.q + ' ns';
+    html += '<br><span class="dim">forward</span> ' + a.f + ' ns <span class="contention-line">← waited ' + (a.f - a.q) + ' ns</span>';
+    html += '<br><span class="dim">complete</span> ' + a.e + ' ns <span class="dim">(' + (a.e - a.f) + ' ns access)</span>';
+  } else {
+    html += '<br><span class="dim">forward</span> ' + a.f + ' ns';
+    html += '<br><span class="dim">complete</span> ' + a.e + ' ns <span class="dim">(' + (a.e - a.f) + ' ns access)</span>';
+  }
+  tooltip.innerHTML = html; tooltip.classList.add('visible');
+  var x = e.clientX + 12, y = e.clientY + 12;
+  var r = tooltip.getBoundingClientRect();
+  if (x + r.width > innerWidth - 12) x = e.clientX - r.width - 12;
+  if (y + r.height > innerHeight - 12) y = e.clientY - r.height - 12;
+  tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
+}
+
+init();
+</script>
+</body>
+</html>

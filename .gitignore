@@ -1,0 +1,10 @@
+build*/
+.cache/
+.vscode/
+.clangd
+.claude
+__pycache__/
+*.pyc
+*.tdb
+*.csv
+results/

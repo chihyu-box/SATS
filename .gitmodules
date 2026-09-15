@@ -1,0 +1,3 @@
+[submodule "DRAMSys"]
+	path = DRAMSys
+	url = https://github.com/tukl-msd/DRAMSys.git

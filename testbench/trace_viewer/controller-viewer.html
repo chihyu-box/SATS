@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controller Viewer</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-raised: #eaedf1;
+  --border: #d1d5db;
+  --border-group: #9ca3af;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --text-dim: #9ca3af;
+  --accent: #3b82f6;
+  --stall: #C03030;
+  --contention: #7B2D8E;
+  --queued: #d1d5db;
+  --waiting: #F0A030;
+  --phase-dram: #5B6FD6;
+  --phase-wait: #c8ccd4;
+  --phase-spad: #D97A2B;
+
+  --font-mono: 'IBM Plex Mono', 'Menlo', monospace;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+
+  --label-w: 230px;
+  --panel-w: 320px;
+  --minimap-h: 38px;
+  --ruler-h: 34px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-sans); font-size: 15px;
+  overflow: hidden; height: 100vh;
+  display: flex; flex-direction: column;
+}
+
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0; gap: 16px;
+}
+header h1 { font-family: var(--font-mono); font-size: 16px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+.controls { display: flex; align-items: center; gap: 6px; }
+.controls button, .tabs button, .panel button {
+  font-family: var(--font-mono); font-size: 13px; padding: 5px 12px;
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; transition: background 0.15s;
+}
+.controls button:hover, .tabs button:hover, .panel button:hover { background: var(--border); }
+.tabs { display: flex; gap: 4px; margin-right: auto; }
+.tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.time-display {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-muted); margin-left: 8px; font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  display: flex; align-items: center; gap: 14px;
+  padding: 6px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0; flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); }
+.legend-swatch { width: 16px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+.minimap-wrap {
+  position: relative; height: var(--minimap-h);
+  margin: 0 calc(var(--panel-w) + 16px) 0 calc(var(--label-w) + 16px);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.minimap-wrap canvas { width: 100%; height: 100%; display: block; }
+.minimap-viewport {
+  position: absolute; top: 0; height: 100%;
+  border: 1.5px solid var(--accent); border-radius: 2px;
+  background: rgba(74,158,255,0.08); pointer-events: none;
+}
+
+.body { flex: 1; display: flex; overflow: hidden; }
+.main { flex: 1; display: flex; overflow-y: auto; overflow-x: hidden; position: relative; }
+
+.labels {
+  width: var(--label-w); flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding-top: var(--ruler-h); background: var(--surface);
+}
+.label-row {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 0 12px; font-family: var(--font-mono); font-size: 13px;
+  border-bottom: 1px solid var(--border-group);
+  border-left: 3px solid var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.label-row .title { font-weight: 600; color: var(--text); }
+.label-row .sub { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+
+.scroll-area { flex: 1; position: relative; }
+.timeline { position: relative; min-width: 100%; }
+.ruler {
+  position: sticky; top: 0; z-index: 10; height: var(--ruler-h);
+  background: var(--surface); border-bottom: 1px solid var(--border); overflow: hidden;
+}
+.ruler-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); }
+.ruler-label {
+  position: absolute; top: 8px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+  white-space: nowrap; transform: translateX(4px);
+}
+.rows { position: relative; }
+.rows canvas { display: block; }
+
+.panel {
+  width: var(--panel-w); flex-shrink: 0; overflow-y: auto;
+  border-left: 1px solid var(--border); background: var(--surface);
+  font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.panel section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.panel h2 { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.panel .name { font-size: 15px; font-weight: 600; color: var(--text); }
+.panel .row { display: flex; justify-content: space-between; line-height: 1.7; }
+.panel .row .k { color: var(--text-muted); }
+.panel .row .v { color: var(--text); }
+.panel .empty { color: var(--text-dim); line-height: 1.6; }
+.panel .nav { display: flex; gap: 6px; margin-top: 8px; }
+.panel .nav button { padding: 3px 10px; font-size: 12px; }
+.hist { display: block; width: 100%; height: 56px; margin-top: 6px; }
+.hist-caption { font-size: 11px; color: var(--text-dim); display: flex; justify-content: space-between; }
+
+.tooltip {
+  position: fixed; z-index: 100; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 14px; font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.6; pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  max-width: 340px; display: none; font-variant-numeric: tabular-nums;
+}
+.tooltip.visible { display: block; }
+.tooltip-engine { font-weight: 600; color: var(--accent); }
+.tooltip-dim { color: var(--text-muted); }
+</style>
+
+<header>
+  <h1>SATS Controller Viewer</h1>
+  <div class="tabs" id="tabs"></div>
+  <div class="controls">
+    <button id="zoomOut" title="Zoom out">&minus;</button>
+    <button id="zoomIn" title="Zoom in">+</button>
+    <button id="zoomFit" title="Fit all">Reset</button>
+    <span class="time-display" id="timeDisplay"></span>
+  </div>
+</header>
+<div class="legend" id="legend"></div>
+<div class="minimap-wrap" id="minimapWrap">
+  <canvas id="minimap"></canvas>
+  <div class="minimap-viewport" id="minimapVP"></div>
+</div>
+<div class="body">
+  <div class="main" id="main">
+    <div class="labels" id="labels"></div>
+    <div class="scroll-area" id="scrollArea"><div class="timeline" id="timeline">
+        <div class="ruler" id="ruler"></div>
+        <div class="rows" id="rows"></div>
+      </div></div>
+  </div>
+  <div class="panel" id="panel"></div>
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const DATA = {};
+
+// What each controller's per-row tuple [row, t0, t1, ...] means: each phase is
+// {label, color, span: [from, to] indexes into the tuple, lane: sub-lane within
+// the row}; resources say which interval of the tuple holds a pooled slot.
+var DRAM_C = '#5B6FD6', WAIT_C = '#c8ccd4', SPAD_C = '#D97A2B', SPAD_B_C = '#E8A85C';
+var CTRL_SPEC = {
+  load:  { title: 'load_controller',  op: 'mvin', lanes: 1,
+           phases: [{ label: 'DRAM', color: DRAM_C, span: [1, 2], lane: 0 }, { label: 'wait credit', color: WAIT_C, span: [2, 3], lane: 0 }, { label: 'SPAD', color: SPAD_C, span: [3, 4], lane: 0 }],
+           resources: [{ key: 'buf', label: 'dram buf', hold: [1, 4] }, { key: 'credit', label: 'spad credit', hold: [3, 4] }] },
+  store: { title: 'store_controller', op: 'mvout', lanes: 1,
+           phases: [{ label: 'SPAD', color: SPAD_C, span: [1, 2], lane: 0 }, { label: 'wait', color: WAIT_C, span: [2, 3], lane: 0 }, { label: 'DRAM', color: DRAM_C, span: [3, 4], lane: 0 }],
+           resources: [{ key: 'buf', label: 'dram buf', hold: [1, 4] }, { key: 'credit', label: 'spad credit', hold: [1, 2] }] },
+  gemm:  { title: 'exec_controller', op: 'gemm', lanes: 2,
+           phases: [{ label: 'A read', color: SPAD_C, span: [1, 2], lane: 0 }, { label: 'B read', color: SPAD_B_C, span: [3, 4], lane: 1 }],
+           resources: [] },
+  drain: { title: 'exec_controller', op: 'drain', lanes: 1,
+           phases: [{ label: 'C write', color: SPAD_C, span: [1, 2], lane: 0 }],
+           resources: [] },
+};
+
+var TYPE_COLOR = {
+  mvin:       '#4A88D8',
+  gemm:       '#D4AA18',
+  gemm_flush: '#A87A10',
+  drain:      '#55B078',
+  mvout:      '#E08070',
+};
+var QUEUED_COLOR = '#d1d5db';
+var WAITING_COLOR = '#F0A030';
+var CONTENTION_COLOR = '#7B2D8E';
+var AT_CAP_COLOR = '#C03030';
+
+var ROW_H = 42, BAR_H = 26, BAR_PAD = (ROW_H - BAR_H) / 2;
+var CHART_H = 56, CHART_PAD = 8;
+var WF_ROW_H = 14, WF_BAR_H = 9;
+var PADDING = 20;
+
+var ctrlName, ctrl, spec, instrs;
+var STRIPS = [], TOTAL_HEIGHT = 0;
+var series = {};          // key -> [[t, value], ...] step series for the active controller
+var atCap = {};           // key -> ns spent at capacity
+var viewStart, viewEnd, selected = null, rafId = 0;
+
+var scrollArea = document.getElementById('scrollArea');
+var timelineEl = document.getElementById('timeline');
+var rulerEl = document.getElementById('ruler');
+var rowsEl = document.getElementById('rows');
+var labelsEl = document.getElementById('labels');
+var panelEl = document.getElementById('panel');
+var tooltipEl = document.getElementById('tooltip');
+var timeDisplay = document.getElementById('timeDisplay');
+var minimapCanvas = document.getElementById('minimap');
+var minimapVP = document.getElementById('minimapVP');
+var minimapWrap = document.getElementById('minimapWrap');
+
+var canvas = document.createElement('canvas');
+var ctx = canvas.getContext('2d');
+rowsEl.appendChild(canvas);
+
+function init() {
+  if (!DATA.controllers) return;
+  buildTabs();
+  setupInteraction();
+  var hash = parseHash();
+  viewStart = -PADDING; viewEnd = DATA.maxTime + PADDING;
+  selectController(hash.ctrl in DATA.controllers ? hash.ctrl : 'load');
+  if (hash.id !== null) select(hash.id);
+}
+
+function parseHash() {
+  var m = /^#(\w+)(?:\/(\d+))?/.exec(location.hash);
+  return { ctrl: m ? m[1] : null, id: m && m[2] ? parseInt(m[2], 10) : null };
+}
+function writeHash() {
+  history.replaceState(null, '', '#' + ctrlName + (selected ? '/' + selected.id : ''));
+}
+
+// Step series from +1/-1 events. Releases go before acquires at the same
+// timestamp so a slot handed straight to the next user never reads as
+// exceeding the pool.
+function stepSeries(events) {
+  events.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
+  var out = [[0, 0]], v = 0;
+  events.forEach(function(e) {
+    v += e[1];
+    if (out[out.length - 1][0] === e[0]) out[out.length - 1][1] = v;
+    else out.push([e[0], v]);
+  });
+  return out;
+}
+function timeAt(s, cap) {
+  if (cap === undefined) return 0;
+  var total = 0;
+  for (var i = 0; i < s.length; i++) {
+    var end = i + 1 < s.length ? s[i + 1][0] : DATA.maxTime;
+    if (s[i][1] >= cap) total += end - s[i][0];
+  }
+  return total;
+}
+
+function selectController(name) {
+  ctrlName = name; ctrl = DATA.controllers[name]; spec = CTRL_SPEC[name]; instrs = ctrl.instrs;
+  selected = null;
+  document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.toggle('active', b.dataset.ctrl === name); });
+
+  // lane packing for the lifecycle bars (issue -> end)
+  var laneEnd = [];
+  instrs.forEach(function(iv) {
+    var lane = -1;
+    for (var j = 0; j < laneEnd.length; j++) { if (laneEnd[j] <= iv.issue) { lane = j; break; } }
+    if (lane === -1) { lane = laneEnd.length; laneEnd.push(-Infinity); }
+    iv._lane = lane; laneEnd[lane] = iv.end;
+  });
+
+  series = {}; atCap = {};
+  var q = [];
+  instrs.forEach(function(iv) { q.push([iv.issue, 1]); q.push([iv.dequeue, -1]); });
+  series.queue = stepSeries(q);
+  atCap.queue = timeAt(series.queue, ctrl.caps.queue);
+  spec.resources.forEach(function(r) {
+    var ev = [];
+    instrs.forEach(function(iv) {
+      (iv.rows || []).forEach(function(row) { ev.push([row[r.hold[0]], 1]); ev.push([row[r.hold[1]], -1]); });
+    });
+    series[r.key] = stepSeries(ev);
+    atCap[r.key] = timeAt(series[r.key], ctrl.caps[r.key]);
+  });
+
+  buildStrips();
+  buildLegend();
+  buildPanel();
+  writeHash();
+  scheduleRender();
+}
+
+function buildStrips() {
+  STRIPS = [];
+  var y = 0;
+  function add(s) { s.yOffset = y; y += s.height; STRIPS.push(s); }
+  var lanes = 0;
+  instrs.forEach(function(iv) { lanes = Math.max(lanes, iv._lane + 1); });
+  add({ kind: 'lifecycle', title: spec.title, sub: instrs.length + ' × ' + spec.op, height: Math.max(lanes, 1) * ROW_H });
+  add({ kind: 'chart', key: 'queue', title: 'instr queue', sub: capText('queue', 'deep'), height: CHART_H });
+  spec.resources.forEach(function(r) {
+    add({ kind: 'chart', key: r.key, title: r.label, sub: capText(r.key, 'in flight'), height: CHART_H });
+  });
+  var n = selected && selected.rows ? selected.rows.length : 0;
+  add({ kind: 'waterfall', title: 'rows', sub: selected ? (selected.name || selected.id) + ' · ' + (n ? n + ' rows' : 'no rows') : 'click an instruction',
+        height: n ? n * WF_ROW_H * spec.lanes + 2 * CHART_PAD : ROW_H });
+  TOTAL_HEIGHT = y;
+
+  labelsEl.innerHTML = '';
+  STRIPS.forEach(function(s) {
+    var div = document.createElement('div');
+    div.className = 'label-row'; div.style.height = s.height + 'px';
+    var t = document.createElement('span'); t.className = 'title'; t.textContent = s.title; div.appendChild(t);
+    if (s.sub) { var u = document.createElement('span'); u.className = 'sub'; u.textContent = s.sub; div.appendChild(u); }
+    labelsEl.appendChild(div);
+  });
+}
+function capText(key, noun) {
+  var cap = ctrl.caps[key];
+  var peak = 0; series[key].forEach(function(p) { peak = Math.max(peak, p[1]); });
+  var s = 'peak ' + peak + (cap !== undefined ? '/' + cap : '') + ' ' + noun;
+  if (cap !== undefined && atCap[key]) s += ' · full ' + atCap[key] + ' ns';
+  return s;
+}
+
+function buildTabs() {
+  var tabs = document.getElementById('tabs');
+  Object.keys(CTRL_SPEC).forEach(function(name) {
+    if (!DATA.controllers[name] || DATA.controllers[name].instrs.length === 0) return;
+    var b = document.createElement('button');
+    b.textContent = name; b.dataset.ctrl = name;
+    b.addEventListener('click', function() { selectController(name); });
+    tabs.appendChild(b);
+  });
+}
+
+function buildLegend() {
+  var legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  function swatch(label, color, style) {
+    var item = document.createElement('div'); item.className = 'legend-item';
+    var sw = document.createElement('div'); sw.className = 'legend-swatch'; sw.style.background = color;
+    if (style) Object.keys(style).forEach(function(k) { sw.style[k] = style[k]; });
+    item.appendChild(sw); item.appendChild(document.createTextNode(label));
+    legend.appendChild(item);
+  }
+  swatch('queued', QUEUED_COLOR, { backgroundImage: 'repeating-linear-gradient(135deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 6px)' });
+  swatch('waiting for resource', WAITING_COLOR);
+  swatch('running', '#4A88D8');
+  swatch('bank contention', 'var(--surface-raised)', { borderBottom: '4px solid ' + CONTENTION_COLOR });
+  swatch('at capacity', 'rgba(192,48,48,0.25)', { border: '1px solid ' + AT_CAP_COLOR });
+  spec.phases.forEach(function(ph) { swatch('row: ' + ph.label, ph.color); });
+  var tip = document.createElement('div'); tip.className = 'legend-item';
+  tip.style.marginLeft = 'auto'; tip.style.color = 'var(--text-dim)';
+  tip.textContent = 'scroll to zoom · drag to pan · click bar to inspect · Esc to clear';
+  legend.appendChild(tip);
+}
+
+function select(id) {
+  var iv = null;
+  instrs.forEach(function(x) { if (x.id === id) iv = x; });
+  selected = (selected && iv && selected.id === iv.id) ? null : iv;
+  buildStrips(); buildPanel(); writeHash(); scheduleRender();
+}
+function step(delta) {
+  if (!instrs.length) return;
+  var i = selected ? instrs.indexOf(selected) : -1;
+  var next = instrs[Math.max(0, Math.min(instrs.length - 1, i + delta))];
+  if (next === selected) return;
+  selected = null; select(next.id);
+}
+
+function setupInteraction() {
+  scrollArea.addEventListener('wheel', function(e) {
+    if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    var rect = scrollArea.getBoundingClientRect();
+    zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, e.clientX - rect.left);
+  }, { passive: false });
+
+  var dragging = false, dragStartX = 0, dragVS = 0, dragVE = 0, moved = false;
+  scrollArea.addEventListener('mousedown', function(e) {
+    dragging = true; moved = false; dragStartX = e.clientX;
+    dragVS = viewStart; dragVE = viewEnd;
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    if (Math.abs(e.clientX - dragStartX) > 3) { moved = true; scrollArea.style.cursor = 'grabbing'; }
+    var dt = -((e.clientX - dragStartX) / scrollArea.clientWidth) * (dragVE - dragVS);
+    viewStart = dragVS + dt; viewEnd = dragVE + dt;
+    scheduleRender();
+  });
+  window.addEventListener('mouseup', function() { dragging = false; scrollArea.style.cursor = ''; });
+
+  canvas.addEventListener('mousemove', function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) { showTooltip(e, hit); canvas.style.cursor = hit.instr ? 'pointer' : ''; }
+    else { tooltipEl.classList.remove('visible'); canvas.style.cursor = ''; }
+  });
+  canvas.addEventListener('mouseleave', function() { tooltipEl.classList.remove('visible'); canvas.style.cursor = ''; });
+  canvas.addEventListener('click', function(e) {
+    if (moved) return;
+    var rect = canvas.getBoundingClientRect();
+    var hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit && hit.instr) select(hit.instr.id);
+    else if (!hit && selected) select(selected.id);
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && selected) select(selected.id);
+    else if (e.key === 'ArrowRight') step(1);
+    else if (e.key === 'ArrowLeft') step(-1);
+  });
+
+  minimapWrap.addEventListener('click', function(e) {
+    var ratio = (e.clientX - minimapWrap.getBoundingClientRect().left) / minimapWrap.clientWidth;
+    var t = -PADDING + ratio * (DATA.maxTime + 2 * PADDING);
+    var half = (viewEnd - viewStart) / 2;
+    viewStart = t - half; viewEnd = t + half;
+    scheduleRender();
+  });
+
+  document.getElementById('zoomIn').addEventListener('click', function() { zoom(1/1.5, scrollArea.clientWidth/2); });
+  document.getElementById('zoomOut').addEventListener('click', function() { zoom(1.5, scrollArea.clientWidth/2); });
+  document.getElementById('zoomFit').addEventListener('click', function() {
+    viewStart = -PADDING; viewEnd = DATA.maxTime + PADDING; scheduleRender();
+  });
+  window.addEventListener('resize', scheduleRender);
+}
+
+function timeToX(t) { return ((t - viewStart) / (viewEnd - viewStart)) * scrollArea.clientWidth; }
+function xToTime(x) { return viewStart + (x / scrollArea.clientWidth) * (viewEnd - viewStart); }
+
+function zoom(factor, centerX) {
+  var centerT = xToTime(centerX);
+  var newRange = (viewEnd - viewStart) * factor;
+  var cr = Math.max(10, Math.min(DATA.maxTime + 2 * PADDING, newRange));
+  var ratio = (centerT - viewStart) / (viewEnd - viewStart);
+  viewStart = centerT - cr * ratio; viewEnd = centerT + cr * (1 - ratio);
+  scheduleRender();
+}
+
+function scheduleRender() { if (!rafId) rafId = requestAnimationFrame(function() { rafId = 0; render(); }); }
+
+function niceStep(range) {
+  var raw = range / 8, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+  if (n <= 1) return mag; if (n <= 2) return 2*mag; if (n <= 5) return 5*mag; return 10*mag;
+}
+
+function seriesValueAt(s, t) {
+  var v = 0;
+  for (var i = 0; i < s.length && s[i][0] <= t; i++) v = s[i][1];
+  return v;
+}
+
+function hitTest(mx, my) {
+  var w = scrollArea.clientWidth;
+  for (var si = 0; si < STRIPS.length; si++) {
+    var s = STRIPS[si];
+    if (my < s.yOffset || my >= s.yOffset + s.height) continue;
+    var ly = my - s.yOffset;
+    if (s.kind === 'lifecycle') {
+      for (var i = instrs.length - 1; i >= 0; i--) {
+        var iv = instrs[i];
+        var top = iv._lane * ROW_H + BAR_PAD;
+        if (ly < top || ly > top + BAR_H) continue;
+        var x1 = timeToX(iv.issue), x2 = timeToX(iv.end);
+        if (mx >= Math.max(x1, -2) && mx <= Math.max(x2, x1 + 2)) return { instr: iv };
+      }
+    } else if (s.kind === 'chart') {
+      var t = xToTime(mx);
+      return { chart: s, t: t, value: seriesValueAt(series[s.key], t) };
+    } else if (s.kind === 'waterfall' && selected && selected.rows) {
+      var ri = Math.floor((ly - CHART_PAD) / (WF_ROW_H * spec.lanes));
+      if (ri < 0 || ri >= selected.rows.length) return null;
+      var row = selected.rows[ri];
+      var lo = Math.min.apply(null, row.slice(1)), hi = Math.max.apply(null, row.slice(1));
+      if (mx >= timeToX(lo) - 2 && mx <= timeToX(hi) + 2) return { row: row };
+    }
+  }
+  return null;
+}
+
+function drawHatch(x, y, w, h) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+  for (var k = -h; k < w; k += 6) {
+    ctx.beginPath(); ctx.moveTo(x + k, y + h); ctx.lineTo(x + k + h, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function render() {
+  var w = scrollArea.clientWidth, h = TOTAL_HEIGHT;
+  var dpr = devicePixelRatio || 1;
+  timelineEl.style.width = w + 'px';
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  rulerEl.innerHTML = '';
+  var range = viewEnd - viewStart, stepNs = niceStep(range), firstTick = Math.ceil(viewStart / stepNs) * stepNs;
+  for (var t = firstTick; t <= viewEnd; t += stepNs) {
+    var x = timeToX(t);
+    var tick = document.createElement('div'); tick.className = 'ruler-tick'; tick.style.left = x + 'px'; rulerEl.appendChild(tick);
+    var lbl = document.createElement('div'); lbl.className = 'ruler-label'; lbl.style.left = x + 'px'; lbl.textContent = Math.round(t) + ' ns'; rulerEl.appendChild(lbl);
+  }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.globalAlpha = 0.3; ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1;
+  for (var t2 = firstTick; t2 <= viewEnd; t2 += stepNs) {
+    var gx = Math.round(timeToX(t2)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  STRIPS.forEach(function(s, si) {
+    if (si % 2 === 1) { ctx.fillStyle = 'rgba(0,0,0,0.015)'; ctx.fillRect(0, s.yOffset, w, s.height); }
+    if (s.kind === 'lifecycle') renderLifecycle(s, w);
+    else if (s.kind === 'chart') renderChart(s, w);
+    else renderWaterfall(s, w);
+    ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, s.yOffset + s.height - 1); ctx.lineTo(w, s.yOffset + s.height - 1); ctx.stroke();
+  });
+
+  timeDisplay.textContent = Math.round(viewStart) + ' ns — ' + Math.round(viewEnd) + ' ns';
+  renderMinimap();
+}
+
+function renderLifecycle(s, w) {
+  ctx.font = '600 10px "IBM Plex Mono", Menlo, monospace';
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  instrs.forEach(function(iv) {
+    var xi = timeToX(iv.issue), xd = timeToX(iv.dequeue), xb = timeToX(iv.begin), xe = timeToX(iv.end);
+    if (xe < -10 || xi > w + 10) return;
+    var dimmed = selected !== null && selected !== iv;
+    var top = s.yOffset + iv._lane * ROW_H + BAR_PAD;
+    ctx.globalAlpha = dimmed ? 0.18 : 1;
+
+    if (xd > xi) { ctx.fillStyle = QUEUED_COLOR; ctx.fillRect(xi, top, xd - xi, BAR_H); if (!dimmed) drawHatch(xi, top, xd - xi, BAR_H); }
+    if (xb > xd) { ctx.fillStyle = WAITING_COLOR; ctx.fillRect(xd, top, xb - xd, BAR_H); }
+    var bw = Math.max(xe - xb, 2);
+    ctx.fillStyle = TYPE_COLOR[iv.type] || TYPE_COLOR.mvin;
+    ctx.fillRect(xb, top, bw, BAR_H);
+    ctx.strokeStyle = selected === iv ? '#111827' : 'rgba(0,0,0,0.25)'; ctx.lineWidth = selected === iv ? 1.5 : 1;
+    ctx.strokeRect(xi + 0.5, top + 0.5, Math.max(xe - xi, 2) - 1, BAR_H - 1);
+
+    if (iv.contention && !dimmed) {
+      ctx.fillStyle = CONTENTION_COLOR;
+      iv.contention.forEach(function(ev) {
+        var ex = timeToX(ev.t), ew = Math.max(timeToX(ev.t + ev.d) - ex, 1.5);
+        ctx.fillRect(ex, top + BAR_H - 5, ew, 5);
+      });
+    }
+    if (bw > 28 && !dimmed) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(iv.name || String(iv.id), xb + bw / 2, top + BAR_H / 2 + 1);
+    }
+    ctx.globalAlpha = 1;
+  });
+}
+
+function renderChart(s, w) {
+  var data = series[s.key], cap = ctrl.caps[s.key];
+  var peak = cap !== undefined ? cap : 1;
+  data.forEach(function(p) { peak = Math.max(peak, p[1]); });
+  var y0 = s.yOffset + s.height - CHART_PAD, plotH = s.height - 2 * CHART_PAD;
+  var yOf = function(v) { return y0 - (v / peak) * plotH; };
+
+  ctx.beginPath();
+  ctx.moveTo(timeToX(data[0][0]), y0);
+  for (var i = 0; i < data.length; i++) {
+    var x = timeToX(data[i][0]), xn = timeToX(i + 1 < data.length ? data[i + 1][0] : DATA.maxTime);
+    ctx.lineTo(x, yOf(data[i][1])); ctx.lineTo(xn, yOf(data[i][1]));
+  }
+  ctx.lineTo(timeToX(DATA.maxTime), y0); ctx.closePath();
+  ctx.fillStyle = 'rgba(59,130,246,0.18)'; ctx.fill();
+  ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  if (cap !== undefined) {
+    ctx.fillStyle = 'rgba(192,48,48,0.25)';
+    for (var j = 0; j < data.length; j++) {
+      if (data[j][1] < cap) continue;
+      var cx = timeToX(data[j][0]), cxn = timeToX(j + 1 < data.length ? data[j + 1][0] : DATA.maxTime);
+      ctx.fillRect(cx, yOf(cap), Math.max(cxn - cx, 1), y0 - yOf(cap));
+    }
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, yOf(cap) + 0.5); ctx.lineTo(w, yOf(cap) + 0.5); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.font = '10px "IBM Plex Mono", Menlo, monospace'; ctx.fillStyle = '#9ca3af';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(String(peak), 4, s.yOffset + 2);
+  ctx.textBaseline = 'bottom'; ctx.fillText('0', 4, s.yOffset + s.height - 2);
+}
+
+function renderWaterfall(s, w) {
+  ctx.font = '10px "IBM Plex Mono", Menlo, monospace';
+  ctx.textBaseline = 'middle';
+  if (!selected || !selected.rows) {
+    ctx.fillStyle = '#9ca3af'; ctx.textAlign = 'left';
+    ctx.fillText(selected ? 'this instruction touches no scratchpad rows' : 'click an instruction above to see its rows', 8, s.yOffset + s.height / 2);
+    return;
+  }
+  var rowH = WF_ROW_H * spec.lanes;
+  selected.rows.forEach(function(row, i) {
+    var y0 = s.yOffset + CHART_PAD + i * rowH;
+    spec.phases.forEach(function(ph) {
+      var x1 = timeToX(row[ph.span[0]]), x2 = timeToX(row[ph.span[1]]);
+      if (x2 <= x1) return;
+      ctx.fillStyle = ph.color;
+      ctx.fillRect(x1, y0 + ph.lane * WF_ROW_H + (WF_ROW_H - WF_BAR_H) / 2, Math.max(x2 - x1, 1), WF_BAR_H);
+    });
+    if (i % 4 === 0) {
+      ctx.fillStyle = '#9ca3af'; ctx.textAlign = 'right';
+      ctx.fillText(String(row[0]), Math.max(timeToX(row[1]) - 4, 22), y0 + rowH / 2);
+    }
+  });
+}
+
+function renderMinimap() {
+  var dpr = window.devicePixelRatio || 1;
+  var w = minimapWrap.clientWidth, h = minimapWrap.clientHeight || 32;
+  minimapCanvas.width = w * dpr; minimapCanvas.height = h * dpr;
+  var mctx = minimapCanvas.getContext('2d');
+  mctx.scale(dpr, dpr); mctx.clearRect(0, 0, w, h);
+  var totalStart = -PADDING, totalRange = DATA.maxTime + 2 * PADDING;
+  var lanes = STRIPS[0].height / ROW_H, rowH = h / lanes;
+  instrs.forEach(function(iv) {
+    var x1 = ((iv.begin - totalStart) / totalRange) * w, x2 = ((iv.end - totalStart) / totalRange) * w;
+    mctx.fillStyle = TYPE_COLOR[iv.type] || TYPE_COLOR.mvin;
+    mctx.globalAlpha = (selected !== null && selected !== iv) ? 0.15 : 0.8;
+    mctx.fillRect(x1, iv._lane * rowH + 0.5, Math.max(x2 - x1, 1), rowH - 1);
+  });
+  mctx.globalAlpha = 1;
+  var vpLeft = ((viewStart - totalStart) / totalRange) * w, vpRight = ((viewEnd - totalStart) / totalRange) * w;
+  minimapVP.style.left = Math.max(vpLeft, 0) + 'px';
+  minimapVP.style.width = Math.min(vpRight - Math.max(vpLeft, 0), w) + 'px';
+}
+
+// ---- side panel ----
+
+function stats(list) {
+  if (!list.length) return null;
+  var s = list.slice().sort(function(a, b) { return a - b; });
+  return { min: s[0], med: s[Math.floor(s.length / 2)], max: s[s.length - 1], sum: s.reduce(function(a, b) { return a + b; }, 0) };
+}
+function phaseDurations(list, p) {
+  var span = spec.phases[p].span, out = [];
+  list.forEach(function(iv) { (iv.rows || []).forEach(function(r) { out.push(r[span[1]] - r[span[0]]); }); });
+  return out;
+}
+function rowHTML(k, v) { return '<div class="row"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+function statHTML(k, st) { return st ? rowHTML(k, st.min + ' / ' + st.med + ' / ' + st.max + ' ns') : ''; }
+
+function buildPanel() {
+  var html = '';
+  if (selected) {
+    var iv = selected;
+    html += '<section><h2>instruction</h2>';
+    html += '<div class="name" style="color:' + (TYPE_COLOR[iv.type] || '#000') + '">' + (iv.name || iv.id) + '</div>';
+    html += rowHTML('type', iv.type + ' <span class="k">id=' + iv.id + '</span>');
+    html += rowHTML('issue → dequeue', (iv.dequeue - iv.issue) + ' ns');
+    html += rowHTML('dequeue → begin', (iv.begin - iv.dequeue) + ' ns');
+    html += rowHTML('begin → end', (iv.end - iv.begin) + ' ns');
+    html += rowHTML('timestamps', iv.issue + ' · ' + iv.dequeue + ' · ' + iv.begin + ' · ' + iv.end);
+    if (iv.contention) {
+      var d = 0; iv.contention.forEach(function(e) { d += e.d; });
+      html += rowHTML('bank contention', iv.contention.length + '× (+' + d + ' ns)');
+    }
+    if (iv.rows) {
+      html += '<div style="height:6px"></div>';
+      spec.phases.forEach(function(ph, p) { html += statHTML(ph.label + ' min/med/max', stats(phaseDurations([iv], p))); });
+      html += '<canvas class="hist" id="histSel"></canvas>';
+      html += '<div class="hist-caption"><span>' + spec.phases[0].label + ' latency histogram</span><span id="histSelCap"></span></div>';
+    }
+    html += '<div class="nav"><button id="navPrev">◀ prev</button><button id="navNext">next ▶</button></div>';
+    html += '</section>';
+  } else {
+    html += '<section><h2>instruction</h2><div class="empty">Click a bar to inspect one instruction: its queue wait, resource wait, and (for load/store) every row\'s DRAM and SPAD timing.</div></section>';
+  }
+
+  html += '<section><h2>' + spec.title + ' · ' + instrs.length + ' × ' + spec.op + '</h2>';
+  var q = 0, wt = 0, run = 0, cn = 0, cd = 0;
+  instrs.forEach(function(iv) {
+    q += iv.dequeue - iv.issue; wt += iv.begin - iv.dequeue; run += iv.end - iv.begin;
+    if (iv.contention) { cn += iv.contention.length; iv.contention.forEach(function(e) { cd += e.d; }); }
+  });
+  html += rowHTML('queued', q + ' ns');
+  html += rowHTML('waiting for resource', wt + ' ns');
+  html += rowHTML('running', run + ' ns');
+  html += rowHTML('bank contention', cn + '× (+' + cd + ' ns)');
+  html += '<div style="height:6px"></div>';
+  html += rowHTML('queue full', atCap.queue + ' ns' + (ctrl.caps.queue !== undefined ? ' <span class="k">of cap ' + ctrl.caps.queue + '</span>' : ''));
+  spec.resources.forEach(function(r) {
+    html += rowHTML(r.label + ' exhausted', atCap[r.key] + ' ns' + (ctrl.caps[r.key] !== undefined ? ' <span class="k">of cap ' + ctrl.caps[r.key] + '</span>' : ''));
+  });
+  html += '<div style="height:6px"></div>';
+  spec.phases.forEach(function(ph, p) { html += statHTML(ph.label + ' min/med/max', stats(phaseDurations(instrs, p))); });
+  html += '<canvas class="hist" id="histAll"></canvas>';
+  html += '<div class="hist-caption"><span>' + spec.phases[0].label + ' latency, all rows</span><span id="histAllCap"></span></div>';
+  html += '</section>';
+  panelEl.innerHTML = html;
+
+  if (selected) {
+    document.getElementById('navPrev').addEventListener('click', function() { step(-1); });
+    document.getElementById('navNext').addEventListener('click', function() { step(1); });
+    if (selected.rows) drawHist('histSel', 'histSelCap', phaseDurations([selected], 0), spec.phases[0].color);
+  }
+  drawHist('histAll', 'histAllCap', phaseDurations(instrs, 0), spec.phases[0].color);
+}
+
+function drawHist(canvasId, capId, values, color) {
+  var c = document.getElementById(canvasId); if (!c || !values.length) return;
+  var dpr = devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  var g = c.getContext('2d'); g.scale(dpr, dpr);
+  var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+  var bins = Math.min(hi - lo + 1, 40), counts = new Array(bins).fill(0);
+  values.forEach(function(v) { counts[Math.min(bins - 1, Math.floor((v - lo) / (hi - lo + 1) * bins))]++; });
+  var peak = Math.max.apply(null, counts), bw = w / bins;
+  g.fillStyle = color;
+  counts.forEach(function(n, i) { var bh = (n / peak) * (h - 4); g.fillRect(i * bw + 0.5, h - bh, Math.max(bw - 1, 1), bh); });
+  document.getElementById(capId).textContent = lo + ' – ' + hi + ' ns · ' + values.length + ' rows';
+}
+
+function showTooltip(e, hit) {
+  var html = '';
+  if (hit.instr) {
+    var iv = hit.instr;
+    html += '<span class="tooltip-engine">' + spec.title + '</span>';
+    html += '<br><span style="color:' + (TYPE_COLOR[iv.type] || '#000') + '">● ' + iv.type + '</span> <span class="tooltip-dim">' + (iv.name || '') + ' id=' + iv.id + '</span>';
+    html += '<br>queued ' + (iv.dequeue - iv.issue) + ' ns · waiting ' + (iv.begin - iv.dequeue) + ' ns · running ' + (iv.end - iv.begin) + ' ns';
+    html += '<br><span class="tooltip-dim">' + iv.issue + ' → ' + iv.dequeue + ' → ' + iv.begin + ' → ' + iv.end + ' ns</span>';
+    if (iv.contention) {
+      var d = 0; iv.contention.forEach(function(ev) { d += ev.d; });
+      html += '<br><span style="color:var(--contention)">⬥ bank contention</span> <span class="tooltip-dim">' + iv.contention.length + '× (+' + d + ' ns)</span>';
+    }
+  } else if (hit.chart) {
+    var cap = ctrl.caps[hit.chart.key];
+    html += '<span class="tooltip-engine">' + hit.chart.title + '</span>';
+    html += '<br>' + hit.value + (cap !== undefined ? ' / ' + cap : '') + ' <span class="tooltip-dim">at ' + Math.round(hit.t) + ' ns</span>';
+    if (cap !== undefined && hit.value >= cap) html += '<br><span style="color:var(--stall)">at capacity</span>';
+  } else if (hit.row) {
+    var r = hit.row, ops = selected.operands || {};
+    html += '<span class="tooltip-engine">' + (selected.name || selected.id) + '</span> <span class="tooltip-dim">row ' + r[0] + '</span>';
+    spec.phases.forEach(function(ph) {
+      html += '<br><span style="color:' + ph.color + '">■</span> ' + ph.label + ' ' + (r[ph.span[1]] - r[ph.span[0]]) + ' ns';
+      html += ' <span class="tooltip-dim">' + r[ph.span[0]] + ' → ' + r[ph.span[1]] + '</span>';
+    });
+    var addr = [];
+    if (ops.dram !== undefined) addr.push('dram ' + (ops.dram + r[0] * ops.dram_stride), 'spad ' + (ops.spad + r[0] * ops.spad_stride));
+    if (ops.a !== undefined) addr.push('a ' + (ops.a + r[0] * ops.a_stride), 'b ' + (ops.b + r[0] * ops.b_stride));
+    if (ops.c !== undefined) addr.push('c ' + (ops.c + r[0] * ops.c_stride));
+    if (addr.length) html += '<br><span class="tooltip-dim">' + addr.join(' · ') + '</span>';
+  }
+  tooltipEl.innerHTML = html;
+  tooltipEl.classList.add('visible');
+  var px = e.clientX + 12, py = e.clientY + 12;
+  var rect = tooltipEl.getBoundingClientRect();
+  if (px + rect.width > window.innerWidth - 12) px = e.clientX - rect.width - 12;
+  if (py + rect.height > window.innerHeight - 12) py = e.clientY - rect.height - 12;
+  tooltipEl.style.left = px + 'px'; tooltipEl.style.top = py + 'px';
+}
+
+init();
+</script>
+</body>
+</html>

@@ -16,7 +16,7 @@ namespace sats
         {
             dram_payloads[idx].set_mm(&dummy_memory_manager);
             dram_payloads[idx].set_command(tlm::TLM_WRITE_COMMAND);
-            dram_payloads[idx].set_data_ptr(row_buffers[idx].data());
+            dram_payloads[idx].set_data_ptr(row_buffers[idx].bytes());
             dram_payloads[idx].set_data_length(config::BYTES_PER_BANK_ROW);
             dram_payloads[idx].set_extension(new utility::RequestTag);
             free_data_bufs.push(idx);
@@ -131,7 +131,7 @@ namespace sats
                 tag.credit = free_spad_idx;
                 utility::tag_of(dram_payloads[free_buf_idx]).copy_from(tag);
                 spad_payloads[free_spad_idx].set_address((mvout.spad_src + row * mvout.spad_stride).to_flat());
-                spad_payloads[free_spad_idx].set_data_ptr(row_buffers[free_buf_idx].data());
+                spad_payloads[free_spad_idx].set_data_ptr(row_buffers[free_buf_idx].bytes());
                 dram_payloads[free_buf_idx].set_address(mvout.dram_dst + row * mvout.dram_stride);
                 tracer.log("store_controller_spad", mvout.instr_id, "spad_req", "row=" + std::to_string(row));
                 tlm::tlm_phase phase = tlm::BEGIN_REQ;

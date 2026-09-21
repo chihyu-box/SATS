@@ -1,4 +1,5 @@
 #include "pe_array_logic.h"
+#include <type_traits>
 
 namespace sats::logic
 {
@@ -27,9 +28,12 @@ namespace sats::logic
         for (size_t j = 0; j < config::DIM; j++)
             b_reg[0][j] = b_vec[j];
 
+        // Adds in unsigned so an overflow wraps around instead of being undefined behaviour.
         for (size_t i = 0; i < config::DIM; i++)
             for (size_t j = 0; j < config::DIM; j++)
-                psum[buf][i][j] += static_cast<config::accType>(a_reg[i][j]) * static_cast<config::accType>(b_reg[i][j]);
+                psum[buf][i][j] = static_cast<config::accType>(
+                    static_cast<std::make_unsigned_t<config::accType>>(psum[buf][i][j]) +
+                    static_cast<std::make_unsigned_t<config::accType>>(static_cast<config::accType>(a_reg[i][j]) * static_cast<config::accType>(b_reg[i][j])));
     }
 
     type::AccVector PEArrayLogic::shift_out(size_t row_index, size_t buf)

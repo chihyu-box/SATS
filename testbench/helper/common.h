@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <fstream>
 #include <initializer_list>
 #include <iomanip>
@@ -12,6 +13,7 @@
 #include <limits>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 // Records what the trace cannot show: which instructions the scheduler chose to wait for, and a
@@ -64,11 +66,12 @@ public:
     // Fills the real contents with values drawn uniformly over inputType.
     Matrix(size_t rows, size_t cols, uint64_t seed) : Matrix(rows, cols)
     {
-        constexpr uint64_t range = uint64_t{std::numeric_limits<sats::config::inputType>::max()} + 1;
+        constexpr int64_t lo = std::numeric_limits<sats::config::inputType>::min();
+        constexpr uint64_t range = static_cast<uint64_t>(std::numeric_limits<sats::config::inputType>::max()) - lo + 1;
         std::mt19937_64 rng(seed);
         for (size_t r = 0; r < rows; ++r)
             for (size_t c = 0; c < cols; ++c)
-                at(r, c) = static_cast<sats::config::inputType>(rng() % range);
+                at(r, c) = static_cast<sats::config::inputType>(lo + static_cast<int64_t>(rng() % range));
     }
 
     sats::config::inputType &at(size_t r, size_t c) { return data[r * padded_cols + c]; }
@@ -94,7 +97,7 @@ public:
         for (size_t r = 0; r < rows; ++r)
         {
             for (size_t c = 0; c < cols; ++c)
-                std::cout << std::setw(4) << static_cast<int>(at(r, c));
+                std::cout << std::setw(5) << static_cast<int>(at(r, c));
             std::cout << std::endl;
         }
     }
@@ -138,10 +141,30 @@ inline uint64_t dram_initialize(sats::TopModule &top, const Matrix &m, uint64_t 
     return bytes;
 }
 
+// Splits a scale in (0, 1) into the Q31 multiplier and right shift a drain takes, the way a compiler
+// quantises a float scale for the hardware.
+constexpr sats::type::ScaleFactor quantize_scale(double scale)
+{
+    assert(scale > 0.0 && scale < 1.0 && "scale must be in (0, 1)");
+
+    uint8_t shift = 0;
+    while (scale < 0.5)
+    {
+        scale *= 2;
+        ++shift;
+    }
+    assert(shift <= std::numeric_limits<sats::config::accType>::digits && "scale is too small for the shifter");
+
+    // Nearest Q31 value; a scale just under 1 rounds up to 2^31, which is one past accType.
+    int64_t mult = static_cast<int64_t>(scale * (int64_t{1} << 31) + 0.5);
+    mult = std::min<int64_t>(mult, std::numeric_limits<sats::config::accType>::max());
+    return {.mult = static_cast<sats::config::accType>(mult), .shift = shift};
+}
+
 // Reads C back from DRAM and compares its real contents with the product A * B computed here in
 // software.
 inline bool validate_gemm(sats::TopModule &top, uint64_t C_dram_addr,
-                          const Matrix &A, const Matrix &B, bool print_matrices)
+                          const Matrix &A, const Matrix &B, sats::type::ScaleFactor scale_factor, bool print_matrices)
 {
     assert(A.cols == B.rows && "A's columns must match B's rows");
 
@@ -156,20 +179,22 @@ inline bool validate_gemm(sats::TopModule &top, uint64_t C_dram_addr,
     {
         for (size_t n = 0; n < B.cols; ++n)
         {
-            sats::config::accType acc = 0;
+            // Wraps on overflow exactly like the PE accumulator.
+            std::make_unsigned_t<sats::config::accType> acc = 0;
             for (size_t k = 0; k < A.cols; ++k)
                 acc += static_cast<sats::config::accType>(A.at(m, k)) * static_cast<sats::config::accType>(B.at(k, n));
-            C_expected.at(m, n) = sats::logic::ScalerLogic::scale(acc);
-            saturated += C_expected.at(m, n) == std::numeric_limits<sats::config::inputType>::max();
+            C_expected.at(m, n) = sats::logic::ScalerLogic::scale(static_cast<sats::config::accType>(acc), scale_factor);
+            saturated += C_expected.at(m, n) == std::numeric_limits<sats::config::inputType>::max() ||
+                         C_expected.at(m, n) == std::numeric_limits<sats::config::inputType>::min();
 
             if (C_expected.at(m, n) != C_hardware.at(m, n))
                 ok = false;
         }
     }
 
-    // The scaler saturates at the maximum of inputType, so a wrong sum that is too large still comes
-    // out at that maximum and the check passes. Set SCALE_FACTOR so that C spreads over inputType
-    // without reaching it.
+    // The scaler saturates at the limits of inputType, so a wrong sum that is too large or too small
+    // still comes out at that limit and the check passes. Set scale_factor so that C spreads over
+    // inputType without reaching either end.
     if (saturated > 0)
         std::cerr << "warning: " << saturated << " of " << A.rows * B.cols << " expected C entries saturate; "
                   << "validation is blind to errors there" << std::endl;

@@ -57,14 +57,16 @@ namespace sats::isa
         friend std::ostream &operator<<(std::ostream &os, const GemmInstr &gi)  { return os; }
     };
 
-    // Write a finished psum[psum_index] out to the scratchpad: DIM rows are scaled down to input
-    // width and stored at C_addr + i*c_stride, leaving the buffer cleared for the next chain.
+    // Write a finished psum[psum_index] out to the scratchpad: DIM rows are multiplied by the
+    // fixed-point scale_factor, rounded and saturated to input width, and stored at
+    // C_addr + i*c_stride, leaving the buffer cleared for the next chain.
     // Only valid once that chain has been closed by a flush gemm.
     struct DrainInstr
     {
         type::SpadAddr C_addr;
         size_t c_stride;
         size_t psum_index;
+        type::ScaleFactor scale_factor;
         size_t instr_id;
         friend std::ostream &operator<<(std::ostream &os, const DrainInstr &di) { return os; }
     };

@@ -1,5 +1,6 @@
 #include "top_module.h"
 #include <cstring>
+#include <limits>
 #include <sys/mman.h>
 
 namespace sats
@@ -272,7 +273,13 @@ namespace sats
 
         if (instr.psum_index > 1)
             SC_REPORT_ERROR("TopModule", (ctx + ": psum_buf must be 0 or 1").c_str());
-        
+
+        if (instr.scale_factor.mult <= 0)
+            SC_REPORT_ERROR("TopModule", (ctx + ": scale_factor.mult must be positive").c_str());
+
+        if (instr.scale_factor.shift > std::numeric_limits<config::accType>::digits)
+            SC_REPORT_ERROR("TopModule", (ctx + ": scale_factor.shift must be at most " + std::to_string(std::numeric_limits<config::accType>::digits)).c_str());
+
         check_spad_addr_range(instr.C_addr, instr.c_stride, config::DIM, ctx);
     }
 }

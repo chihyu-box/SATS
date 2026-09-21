@@ -40,6 +40,7 @@ protected:
     static inline const Matrix A = Matrix(M, K, 1);
     static inline const Matrix AT = A.transpose();
     static inline const Matrix B = Matrix(K, N, 2);
+    static constexpr sats::type::ScaleFactor scale_factor = quantize_scale(1.0 / 1400);
 
     // A tiles use the even banks, B tiles the odd banks, and C tiles every bank in turn.
     static_assert(sats::config::N_BANKS % 2 == 0 && sats::config::N_BANKS >= 2, "the even/odd bank split needs an even bank count of at least two");
@@ -85,7 +86,7 @@ private:
 
         schedule();
 
-        bool ok = validate_gemm(top, c_base, A, B, print_matrices);
+        bool ok = validate_gemm(top, c_base, A, B, scale_factor, print_matrices);
 
         sc_core::sc_time elapsed = sc_core::sc_time_stamp() - start;
         std::cout << "[" << name() << "] " << (ok ? "PASS" : "FAIL") << " sim time: " << elapsed << std::endl;

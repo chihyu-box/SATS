@@ -14,15 +14,15 @@ namespace sats
         c_socket.register_nb_transport_bw(this, &ExecController::nb_transport_c_bw);
 
         a_payload.set_command(tlm::TLM_READ_COMMAND);
-        a_payload.set_data_ptr(a_vec.data());
+        a_payload.set_data_ptr(a_vec.bytes());
         a_payload.set_data_length(config::BYTES_PER_BANK_ROW);
 
         b_payload.set_command(tlm::TLM_READ_COMMAND);
-        b_payload.set_data_ptr(b_vec.data());
+        b_payload.set_data_ptr(b_vec.bytes());
         b_payload.set_data_length(config::BYTES_PER_BANK_ROW);
 
         c_payload.set_command(tlm::TLM_WRITE_COMMAND);
-        c_payload.set_data_ptr(c_vec.data());
+        c_payload.set_data_ptr(c_vec.bytes());
         c_payload.set_data_length(config::BYTES_PER_BANK_ROW);
 
         for (auto *payload : {&a_payload, &b_payload, &c_payload})
@@ -185,7 +185,7 @@ namespace sats
             drain_room_freed.notify(sc_core::SC_ZERO_TIME);
 
             drain_cmd->write({.psum_index = instr.psum_index, .rows = config::DIM, .instr_id = instr.instr_id});
-            scaler_cmd->write({.rows = config::DIM, .instr_id = instr.instr_id});
+            scaler_cmd->write({.scale_factor = instr.scale_factor, .rows = config::DIM, .instr_id = instr.instr_id});
             tracer.log("exec_controller_drain", instr.instr_id, "begin", "buf=" + std::to_string(instr.psum_index));
 
             for (size_t row = 0; row < config::DIM; ++row)

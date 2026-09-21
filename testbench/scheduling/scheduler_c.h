@@ -54,7 +54,7 @@ private:
         };
         auto issue_drain = [&](size_t mt, size_t nt, size_t psum_index, std::vector<size_t> after = {}) {
             wait(after);
-            auto id = top.drain({.C_addr = alloc.acquire(SimpleSpadMemoryAllocator::TileId{'c', mt, nt}, c_bank(mt, nt)).addr, .c_stride = spad_stride, .psum_index = psum_index});
+            auto id = top.drain({.C_addr = alloc.acquire(SimpleSpadMemoryAllocator::TileId{'c', mt, nt}, c_bank(mt, nt)).addr, .c_stride = spad_stride, .psum_index = psum_index, .scale_factor = scale_factor});
             log.record(id, after, ScheduleLog::name("D", {mt, nt}));
             return id;
         };

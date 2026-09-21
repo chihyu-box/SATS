@@ -6,11 +6,10 @@
 
 namespace sats::config
 {
-    using inputType = uint8_t;
-    using accType = uint32_t;
+    using inputType = int8_t;
+    using accType = int32_t;
 
     constexpr size_t DIM = 32;
-    constexpr double SCALE_FACTOR = 1.0 / 10000;
 
     constexpr size_t N_BANKS = 4;
     constexpr size_t N_ROWS_PER_BANK = 8192;

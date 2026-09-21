@@ -19,7 +19,7 @@ and a trace of every hardware event, and validates the result against a software
   in flight.
 - DRAM through DRAMSys, with any of its example configurations (`dram_config/`).
 - `inputType` inputs, `accType` accumulators, and a scaler that multiplies drained results by
-  `SCALE_FACTOR` back into `inputType`.
+  the drain's fixed-point `scale_factor` back into `inputType`.
 
 The constants live in `src/include/config.h`:
 
@@ -28,8 +28,7 @@ The constants live in `src/include/config.h`:
 | `DIM` | 32 | array dimension and rows per tile |
 | `N_BANKS` | 4 | scratchpad banks |
 | `N_ROWS_PER_BANK` | 8192 | rows per bank |
-| `inputType`, `accType` | uint8_t, uint32_t | input and accumulator types |
-| `SCALE_FACTOR` | 1 / 10000 | applied by the scaler on drain |
+| `inputType`, `accType` | int8_t, int32_t | input and accumulator types; the accumulator wraps on overflow |
 | `CLOCK_NS` | 1 | cycle time in ns |
 | `BANK_ACCESS_TIME`, `PE_MAC_TIME`, `PE_DRAIN_TIME`, `SCALER_SCALE_TIME`, `SKEW_BUF_SHIFT_TIME` | 1 cycle each | time for a scratchpad bank access, a PE multiply-accumulate, a psum row drained, a row scaled and a skew buffer shift |
 | `INSTR_QUEUE_SIZE` | 4 | instruction queue depth per controller |
@@ -44,7 +43,7 @@ The ISA has four instructions:
 | `mvin`  | `dram_src`, `spad_dst`, `rows`, `dram_stride`, `spad_stride` | copy a tile of `rows` rows from DRAM into the scratchpad; row i goes from `dram_src + i * dram_stride` to `spad_dst + i * spad_stride` |
 | `mvout` | `spad_src`, `dram_dst`, `rows`, `dram_stride`, `spad_stride` | copy a tile of `rows` rows from the scratchpad back to DRAM, the reverse of `mvin` |
 | `gemm`  | `A_addr`, `B_addr`, `a_stride`, `b_stride`, `psum_index`, `is_flush` | stream the `DIM`-row tiles at `A_addr` and `B_addr` through the array, adding their products into `psum[psum_index]`; with `is_flush`, stream zeros instead to push the last products through |
-| `drain` | `C_addr`, `c_stride`, `psum_index` | scale `psum[psum_index]` down to `inputType` and write it to the scratchpad at `C_addr` |
+| `drain` | `C_addr`, `c_stride`, `psum_index`, `scale_factor` | multiply `psum[psum_index]` by `scale_factor.mult`, shift right by `31 + scale_factor.shift` rounding half up, saturate to `inputType`, and write it to the scratchpad at `C_addr` |
 
 A gemm completes when its last row has entered the array, not when its products have reached
 `psum`; gemms issued on the same `psum_index` accumulate, and a flush closes the chain -- only

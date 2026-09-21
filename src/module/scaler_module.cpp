@@ -16,7 +16,7 @@ namespace sats
             for (size_t i = 0; i < cmd.rows; ++i)
             {
                 type::AccVector acc_vec = data_in->read();
-                data_out->write(scaler_logic.shift(acc_vec));
+                data_out->write(scaler_logic.shift(acc_vec, cmd.scale_factor));
                 tracer.log("scaler_module", cmd.instr_id, "tick");
                 wait(config::SCALER_SCALE_TIME);
             }

@@ -44,7 +44,7 @@ private:
                         sb.gemm({.psum_index = psum_index, .is_flush = true}, ScheduleLog::name("F", {mt, nt}));
 
                         auto c = alloc.acquire(SimpleSpadMemoryAllocator::TileId{'c', mt, nt}, c_bank(mt, nt));
-                        sb.drain({.C_addr = c.addr, .c_stride = spad_stride, .psum_index = psum_index}, ScheduleLog::name("D", {mt, nt}));
+                        sb.drain({.C_addr = c.addr, .c_stride = spad_stride, .psum_index = psum_index, .scale_factor = scale_factor}, ScheduleLog::name("D", {mt, nt}));
                         
                         sb.mvout({.spad_src = c.addr, .dram_dst = c_dram(mt, nt), .dims = {DIM, DIM}, .dram_stride = c_dram_stride(), .spad_stride = spad_stride}, ScheduleLog::name("C", {mt, nt}));
                         

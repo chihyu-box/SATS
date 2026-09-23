@@ -48,10 +48,9 @@ namespace sats
         return id <= last_issued_id && rows_remaining.find(id) == rows_remaining.end();
     }
 
-    // DRAMSys runs the full four-phase handshake, so a response is answered with END_RESP; the
-    // scratchpad path has no END_REQ or END_RESP and its responses complete in one call.
     tlm::tlm_sync_enum LoadController::nb_dram_transport_bw(tlm::tlm_generic_payload &payload, tlm::tlm_phase &phase, sc_core::sc_time &delay)
     {
+        // DRAMSys runs the full four-phase handshake
         if (phase == tlm::END_REQ)
         {
             return tlm::TLM_ACCEPTED;
@@ -147,7 +146,6 @@ namespace sats
             size_t free_idx = free_spad_credits.front();
             free_spad_credits.pop();
 
-            // The SPAD payload takes over the DRAM payload's tag, plus the credit it now holds.
             auto &tag = utility::tag_of(spad_payloads[free_idx]);
             tag.copy_from(utility::tag_of(dram_payloads[idx]));
             tag.credit = free_idx;

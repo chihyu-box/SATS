@@ -54,11 +54,7 @@ namespace sats
         std::queue<size_t> free_spad_credits;
         std::queue<size_t> ready_bufs;
 
-        // Rows of one instruction can return from DRAM in any order, and the last row of instruction
-        // N+1 can land before the last row of N, so completion is counted per instruction rather than
-        // by the highest finished id.
-        std::unordered_map<size_t, size_t> rows_remaining;
-
+        std::unordered_map<size_t, size_t> rows_remaining; // rows_remaining[instr_id] = remaining rows
         size_t last_issued_id = 0;
     };
 }

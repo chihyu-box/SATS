@@ -14,15 +14,15 @@ namespace sats
         c_socket.register_nb_transport_bw(this, &ExecController::nb_transport_c_bw);
 
         a_payload.set_command(tlm::TLM_READ_COMMAND);
-        a_payload.set_data_ptr(a_vec.bytes());
+        a_payload.set_data_ptr(a_vec_buf.bytes());
         a_payload.set_data_length(config::BYTES_PER_BANK_ROW);
 
         b_payload.set_command(tlm::TLM_READ_COMMAND);
-        b_payload.set_data_ptr(b_vec.bytes());
+        b_payload.set_data_ptr(b_vec_buf.bytes());
         b_payload.set_data_length(config::BYTES_PER_BANK_ROW);
 
         c_payload.set_command(tlm::TLM_WRITE_COMMAND);
-        c_payload.set_data_ptr(c_vec.bytes());
+        c_payload.set_data_ptr(c_vec_buf.bytes());
         c_payload.set_data_length(config::BYTES_PER_BANK_ROW);
 
         for (auto *payload : {&a_payload, &b_payload, &c_payload})
@@ -51,6 +51,8 @@ namespace sats
 
     bool ExecController::is_gemm_complete(size_t id) const
     {
+        // gemm and drain each run one instruction at a time in issue order, 
+        // so every id at or below the last finished one is complete.
         return id <= last_gemm_completed_id;
     }
 
@@ -165,8 +167,8 @@ namespace sats
 
                     wait(a_done & b_done);
 
-                    a_out->write(a_vec);
-                    b_out->write(b_vec);
+                    a_out->write(a_vec_buf);
+                    b_out->write(b_vec_buf);
                 }
             }
 
@@ -190,7 +192,7 @@ namespace sats
 
             for (size_t row = 0; row < config::DIM; ++row)
             {
-                c_vec = c_in->read();
+                c_vec_buf = c_in->read();
 
                 c_payload.set_address(instr.C_addr.to_flat() + row * instr.c_stride);
                 auto &tag = utility::tag_of(c_payload);

@@ -5,6 +5,7 @@
 
 namespace sats::utility
 {
+    // Used for integrating with DRAMSys
     class DummyMemoryManager : public tlm::tlm_mm_interface
     {
     public:

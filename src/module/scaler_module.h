@@ -2,7 +2,6 @@
 
 #include <systemc>
 #include "logic/scaler_logic.h"
-#include "include/config.h"
 #include "include/type.h"
 #include "utility/tracer.h"
 

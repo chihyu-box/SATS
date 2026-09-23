@@ -59,7 +59,7 @@ namespace sats::type
         uint8_t shift;
     };
 
-    // sc_fifo<T> requires operator<< on T; these payloads are never printed, so the operators stay empty.
+    // sc_fifo<T> requires operator<< on T;
     struct ExecCmd
     {
         size_t psum_index;        // read by the PE array only

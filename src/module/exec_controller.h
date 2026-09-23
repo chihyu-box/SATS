@@ -60,10 +60,10 @@ namespace sats
         sc_core::sc_fifo<isa::GemmInstr> gemm_instr_queue{config::INSTR_QUEUE_SIZE};
         sc_core::sc_fifo<isa::DrainInstr> drain_instr_queue{config::INSTR_QUEUE_SIZE};
         tlm::tlm_generic_payload a_payload, b_payload, c_payload;
-        type::InputVector a_vec, b_vec, c_vec;   // the payloads read into / write out of these directly
         sc_core::sc_event a_done, b_done, c_done;
-        // gemm and drain each run one instruction at a time in issue order, so every id at or below the
-        // last finished one is complete.
+        type::InputVector a_vec_buf, b_vec_buf;  // the scratchpad reads rows into these and the channels carry them to the array
+        type::InputVector c_vec_buf;             // the channel delivers a scaled row into this and the payload writes it to the scratchpad
+
         size_t last_gemm_completed_id = 0;
         size_t last_drain_completed_id = 0;
     };

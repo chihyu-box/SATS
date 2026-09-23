@@ -48,8 +48,6 @@ namespace sats
         return id <= last_issued_id && rows_remaining.find(id) == rows_remaining.end();
     }
 
-    // DRAMSys runs the full four-phase handshake, so a response is answered with END_RESP; the
-    // scratchpad path has no END_REQ or END_RESP and its responses complete in one call.
     tlm::tlm_sync_enum StoreController::nb_dram_transport_bw(tlm::tlm_generic_payload &payload, tlm::tlm_phase &phase, sc_core::sc_time &delay)
     {
         if (phase == tlm::END_REQ)

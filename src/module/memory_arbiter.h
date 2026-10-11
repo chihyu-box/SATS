@@ -25,6 +25,7 @@ namespace sats
 
         tlm::tlm_sync_enum nb_transport_fw(int initiator_id, tlm::tlm_generic_payload &payload, tlm::tlm_phase &phase, sc_core::sc_time &delay);
         tlm::tlm_sync_enum nb_transport_bw(int bank_id, tlm::tlm_generic_payload &payload, tlm::tlm_phase &phase, sc_core::sc_time &delay);
+        void forward_pending(size_t bank_id);
 
         struct PendingRequest
         {
@@ -35,5 +36,6 @@ namespace sats
         bool bank_busy[config::N_BANKS] = {};
         int bank_to_initiator_id[config::N_BANKS] = {};
         std::queue<PendingRequest> pending_requests[config::N_BANKS];
+        sc_core::sc_event bank_freed[config::N_BANKS];
     };
 }
